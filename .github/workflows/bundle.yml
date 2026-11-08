@@ -1,0 +1,48 @@
+name: Make listening bundles
+
+on:
+  schedule:
+    # 07:47 UTC is 2:47 am in New York in winter and 3:47 am in summer.
+    # Off the hour on purpose: GitHub delays jobs scheduled on the hour.
+    - cron: "47 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show what would happen; change nothing in Reader"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: readwise-bundler
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Until the token is added, runs finish green and do nothing.
+      - name: Check configuration
+        id: config
+        run: echo "ready=${{ secrets.READWISE_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      - name: Explain skip
+        if: steps.config.outputs.ready != 'true'
+        run: echo "::notice::Skipping. Add READWISE_TOKEN under Settings > Secrets and variables > Actions."
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.ready == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.config.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+      - name: Test
+        if: steps.config.outputs.ready == 'true'
+        run: python -m unittest discover -s tests -t tests
+      - name: Make bundles
+        if: steps.config.outputs.ready == 'true'
+        env:
+          READWISE_TOKEN: ${{ secrets.READWISE_TOKEN }}
+        run: python -m readwise_bundler run ${{ inputs.dry_run && '--dry-run' || '' }}
