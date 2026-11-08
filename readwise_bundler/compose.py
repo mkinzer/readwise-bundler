@@ -22,13 +22,17 @@ SYNTHETIC_HOST = "https://readwise-bundler.local"
 WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
 ORDINALS = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth"]
 
-# From listening to the first break test in Reader: a line of dashes, a line
-# holding only an ellipsis, and a heading each make the voice pause; horizontal
-# rules, blank paragraphs, lone full stops, emoji and SSML <break> tags do
-# nothing. No single line pauses for long enough, so a break stacks several.
-PAUSE_LINES = 3  # pairs of dash and ellipsis lines in one long pause
-PAUSE = "<p>— — —</p><p>…</p>" * PAUSE_LINES
-CHIME = "<p>Ding. Ding. Ding.</p>"
+# From listening tests in Reader: a line of dashes, a line holding only an
+# ellipsis, and a heading each make the voice pause; horizontal rules, blank
+# paragraphs, lone full stops, emoji and SSML <break> tags do nothing. No single
+# line pauses long enough, so a break stacks several. Ellipsis lines are left
+# out because the voice takes an odd breath at each one.
+PAUSE_LINES = 6
+PAUSE = "<p>— — —</p>" * PAUSE_LINES
+
+# Spoken between the pause and "End of article one". "Ding. Ding. Ding." sounded
+# odd and distracting; None means no sound, only the pause.
+SOUND: Optional[str] = None
 
 
 @dataclass
@@ -80,7 +84,7 @@ class Bundle:
             parts.append(_p(f"{byline[:1].upper()}{byline[1:]}. About {a.minutes} minutes."
                             if byline else f"About {a.minutes} minutes."))
             parts.append(self.bodies.get(a.id, ""))
-            parts.append(PAUSE + CHIME)
+            parts.append(PAUSE + (_p(SOUND) if SOUND else ""))
             parts.append(_p(f"End of article {_word(i)}: “{a.title}”."))
             if i < n:
                 parts.append(PAUSE)  # the next article's heading adds a pause of its own

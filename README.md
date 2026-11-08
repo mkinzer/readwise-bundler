@@ -17,8 +17,10 @@ morning a new one takes its place.
    minutes. *Readwise's summary*. Second: ..."
 2. **Each article:** a heading, "Article 1 of 3: *title*", then the byline and
    length, then the article itself.
-3. **After each article:** a pause, "Ding. Ding. Ding.", a pause, and "End of
-   article one: *title*."
+3. **After each article:** a long pause, "End of article one: *title*.", and
+   another long pause before the next heading. The pauses are lines of dashes,
+   which Reader's voice reads as silence (see `PAUSE` and `SOUND` in
+   `readwise_bundler/compose.py`).
 4. **The end:** "End of bundle 12. That was all three articles."
 
 Images, captions and embedded media are left out, because they read badly

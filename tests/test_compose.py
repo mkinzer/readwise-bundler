@@ -91,7 +91,7 @@ class Assembly(unittest.TestCase):
             "<h2>Article 1 of 3: Article 1</h2>",
             "By Author 1, from Site 1, published March 3, 2025. About 12 minutes.",
             "Body of Article 1.",
-            "Ding. Ding. Ding.",
+            "<p>— — —</p>",
             "End of article one: “Article 1”.",
             "<h2>Article 3 of 3: Article 3</h2>",
             "<p>Published January 15, 2024. About 8 minutes.</p>",
