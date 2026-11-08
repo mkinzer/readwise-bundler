@@ -56,11 +56,18 @@ class Eligibility(unittest.TestCase):
             make_doc(11, parent_id="doc0001"),
             make_doc(12, location="archive"),
             make_doc(13, tags=["India", "history"]),
+            make_doc(14, tags=["jobpost"]),
+            make_doc(15, tags=["Job post"]),
+            make_doc(16, minutes=1, words=300),
+            make_doc(17, minutes=2),
         ]
         pool, skipped = eligible(docs, exclude_ids={"doc0013"})
-        self.assertEqual(sorted(a.id for a in pool), ["doc0001", "doc0006", "doc0008", "doc0009"])
+        self.assertEqual(sorted(a.id for a in pool),
+                         ["doc0001", "doc0006", "doc0008", "doc0009", "doc0017"])
         self.assertEqual(skipped["tagged interactive"], 1)
+        self.assertEqual(skipped["tagged jobpost"], 2)
         self.assertEqual(skipped["40+ minutes"], 1)
+        self.assertEqual(skipped["under 2 minutes"], 1)
         self.assertEqual(skipped["already in a bundle"], 1)
 
 

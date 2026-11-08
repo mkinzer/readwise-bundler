@@ -36,8 +36,11 @@ aloud. In Reader the bundle is titled like `Bundle 12 · 3 articles · 62 min`.
 
 * Only from **Later**: articles, newsletters, and feed items moved to Later.
   Not PDFs, books, videos, podcasts or tweets.
-* Never anything tagged **`interactive`**.
-* Anything Readwise labels at **40 minutes or more** stays on its own.
+* Never anything tagged **`interactive`** or **`jobpost`** (spelling
+  variants like "job post" count too; the list is `SKIP_TAGS` in
+  `readwise_bundler/picking.py`).
+* Anything Readwise labels at **40 minutes or more** stays on its own, and
+  anything **under 2 minutes** is left out.
 * One article is picked at random, and its companions come from what was saved
   within **30 days either side** of it. Picking an article rather than a date
   means bundles come most often from the stretches when the most was saved.

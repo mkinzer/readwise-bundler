@@ -3,8 +3,10 @@
 The rule, as agreed:
 
 * Only documents in Later, and only articles, newsletters and feed articles.
-* Never anything tagged ``interactive``, anything already bundled, or a bundle.
-* Anything Readwise labels at 40 minutes or more stands on its own.
+* Never anything tagged ``interactive`` or ``jobpost``, anything already
+  bundled, or a bundle.
+* Anything Readwise labels at 40 minutes or more stands on its own, and
+  anything under 2 minutes is left out.
 * A bundle holds 2-4 articles adding up to 40-80 minutes, by Readwise's own
   reading-time label.
 * Articles in a bundle were saved within 30 days of one another: pick one
@@ -28,10 +30,13 @@ TAG_BUNDLE = "listen-bundle"   # on the bundles themselves
 TAG_BUNDLED = "bundled"        # on an original once it is in a bundle
 TAG_HEARD = "bundle-heard"     # on a bundle and its originals once the bundle is archived
 TAG_TEST = "listen-bundle-test"
-TAG_SKIP = "interactive"       # never bundle these
-EXCLUDED_TAGS = {TAG_BUNDLE, TAG_BUNDLED, TAG_HEARD, TAG_TEST, TAG_SKIP}
+EXCLUDED_TAGS = {TAG_BUNDLE, TAG_BUNDLED, TAG_HEARD, TAG_TEST}
+# Your tags that keep an article out of bundles. Compared ignoring case, spaces
+# and punctuation, so "jobpost", "Job post" and "job-post" all count.
+SKIP_TAGS = {"interactive", "jobpost"}
 
 STANDALONE_MINUTES = 40   # this long or longer is listened to on its own
+MIN_MINUTES = 2           # shorter than this is left out
 MIN_WORDS = 150           # below this it is a teaser or an empty save
 FALLBACK_WPM = 238        # only used when Readwise gives no reading time
 
@@ -203,6 +208,10 @@ def eligible(docs: Iterable[Dict], *, exclude_ids: Iterable[str] = ()) -> Tuple[
         if hit:
             skip(f"tagged {sorted(hit)[0]}")
             continue
+        mine = {_squash(k) for k in keys} & SKIP_TAGS
+        if mine:
+            skip(f"tagged {sorted(mine)[0]}")
+            continue
         if doc.get("id") in excluded:
             skip("already in a bundle")
             continue
@@ -216,8 +225,15 @@ def eligible(docs: Iterable[Dict], *, exclude_ids: Iterable[str] = ()) -> Tuple[
         if article.minutes >= STANDALONE_MINUTES:
             skip(f"{STANDALONE_MINUTES}+ minutes")
             continue
+        if article.minutes < MIN_MINUTES:
+            skip(f"under {MIN_MINUTES} minutes")
+            continue
         pool.append(article)
     return pool, skipped
+
+
+def _squash(tag: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", tag.lower())
 
 
 # ------------------------------------------------------------------ picking
