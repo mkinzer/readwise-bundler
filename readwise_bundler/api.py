@@ -145,6 +145,11 @@ class ReaderClient:
         _, body = self._request("PATCH", f"{BASE_URL}/update/{path}/", bucket="fast", body=fields)
         return body or {}
 
+    def delete(self, doc_id: str) -> None:
+        """Permanently delete a document (and its highlights)."""
+        path = urllib.parse.quote(doc_id, safe="")
+        self._request("DELETE", f"{BASE_URL}/delete/{path}/", bucket="slow")
+
     def bulk_update(self, updates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Apply per-document updates, 50 at a time. Raises if any item fails."""
         results: List[Dict[str, Any]] = []

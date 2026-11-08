@@ -91,8 +91,9 @@ class Assembly(unittest.TestCase):
             "<h2>Article 1 of 3: Article 1</h2>",
             "By Author 1, from Site 1, published March 3, 2025. About 12 minutes.",
             "Body of Article 1.",
-            "<p>— — —</p>",
+            '<p>&lt;break time="3s" /&gt;</p><p>&lt;break time="3s" /&gt;</p>',
             "End of article one: “Article 1”.",
+            '<p>&lt;break time="3s" /&gt;</p>',
             "<h2>Article 3 of 3: Article 3</h2>",
             "<p>Published January 15, 2024. About 8 minutes.</p>",
             "End of bundle 12. That was all three articles.",
@@ -102,6 +103,17 @@ class Assembly(unittest.TestCase):
             found = html.find(piece, position + 1)
             self.assertGreater(found, position, f"missing or out of order: {piece}")
             position = found
+
+    def test_silence_is_visible_text_not_markup(self):
+        html = self.bundle.html()
+        self.assertNotIn("<break", html, "a real tag is dropped by Reader before speaking")
+        # 3 s after the intro, then 6 s + 3 s around each article's end line
+        self.assertEqual(html.count('&lt;break time="3s" /&gt;'), 1 + 3 * len(self.articles))
+
+    def test_a_remade_bundle_gets_a_new_url(self):
+        remade = Bundle(number=12, articles=self.articles, bodies={}, made_on=date(2026, 11, 8), revision="2")
+        self.assertNotEqual(remade.url, self.bundle.url)
+        self.assertTrue(remade.url.endswith("-2"))
 
     def test_notes_lead_back_to_the_originals(self):
         self.assertEqual(original_ids(self.bundle.notes()), [a.id for a in self.articles])

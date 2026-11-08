@@ -1,9 +1,8 @@
 """Assemble one bundle document, written for the ear.
 
-Reader's voice reads text, so every break is made of words and punctuation:
-a spoken intro listing what is coming, a spoken header before each article,
-and a fixed end marker after each one. The marker never changes, so it
-becomes a signal rather than content.
+A spoken intro lists what is coming, a spoken header comes before each
+article, and after each one there is real silence and a fixed end line. The
+end line never changes, so it becomes a signal rather than content.
 """
 from __future__ import annotations
 
@@ -22,17 +21,18 @@ SYNTHETIC_HOST = "https://readwise-bundler.local"
 WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
 ORDINALS = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth"]
 
-# From listening tests in Reader: a line of dashes, a line holding only an
-# ellipsis, and a heading each make the voice pause; horizontal rules, blank
-# paragraphs, lone full stops, emoji and SSML <break> tags do nothing. No single
-# line pauses long enough, so a break stacks several. Ellipsis lines are left
-# out because the voice takes an odd breath at each one.
-PAUSE_LINES = 6
-PAUSE = "<p>— — —</p>" * PAUSE_LINES
-
-# Spoken between the pause and "End of article one". "Ding. Ding. Ding." sounded
-# odd and distracting; None means no sound, only the pause.
-SOUND: Optional[str] = None
+# Silence. Reader hands a paragraph's visible text to the voice, and its
+# Lifelike voices (ElevenLabs, by every sign) honour ElevenLabs' SSML break tag
+# when it arrives as text: at most 3 seconds per tag, so longer silences use
+# several paragraphs. It must be *visible* text (escaped); written as real markup
+# Reader drops it before speaking. Eight listening tests ruled out everything
+# else: dashes made the voice breathe oddly, hums and repeated sounds came out as
+# sounds of pleasure, and headings, blank lines and rules were too short or did
+# nothing. With other voices, such as Unreal Speech's, the tag may be read aloud.
+BREAK_SECONDS = 3
+_BREAK = "<p>" + html.escape(f'<break time="{BREAK_SECONDS}s" />', quote=False) + "</p>"
+SHORT_PAUSE = _BREAK        # 3 seconds
+LONG_PAUSE = _BREAK * 2     # 6 seconds, after each article
 
 
 @dataclass
@@ -41,6 +41,7 @@ class Bundle:
     articles: List[Article]
     bodies: Dict[str, str]          # article id -> cleaned HTML
     made_on: date
+    revision: str = ""              # set when a bundle is remade, so Reader sees a new URL
 
     @property
     def minutes(self) -> int:
@@ -54,7 +55,8 @@ class Bundle:
     @property
     def url(self) -> str:
         digest = hashlib.sha1(",".join(sorted(a.id for a in self.articles)).encode()).hexdigest()[:10]
-        return f"{SYNTHETIC_HOST}/bundle/{self.number}-{digest}"
+        suffix = f"-{self.revision}" if self.revision else ""
+        return f"{SYNTHETIC_HOST}/bundle/{self.number}-{digest}{suffix}"
 
     def summary(self) -> str:
         return "; ".join(f"{a.title} ({a.minutes} min)" for a in self.articles)
@@ -77,17 +79,16 @@ class Bundle:
             if summary:
                 line += f" {summary}"
             parts.append(_p(line))
-        parts.append(PAUSE)
+        parts.append(SHORT_PAUSE)
         for i, a in enumerate(self.articles, 1):
             parts.append(f"<h2>{_e(f'Article {i} of {n}: {a.title}')}</h2>")
             byline = _byline(a, leading="").strip(", ")
             parts.append(_p(f"{byline[:1].upper()}{byline[1:]}. About {a.minutes} minutes."
                             if byline else f"About {a.minutes} minutes."))
             parts.append(self.bodies.get(a.id, ""))
-            parts.append(PAUSE + (_p(SOUND) if SOUND else ""))
+            parts.append(LONG_PAUSE)
             parts.append(_p(f"End of article {_word(i)}: “{a.title}”."))
-            if i < n:
-                parts.append(PAUSE)  # the next article's heading adds a pause of its own
+            parts.append(SHORT_PAUSE)
         parts.append(_p(f"End of bundle {self.number}. That was all {_word(n)} articles."))
         return "<div>\n" + "\n".join(p for p in parts if p) + "\n</div>"
 

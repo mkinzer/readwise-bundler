@@ -17,10 +17,16 @@ morning a new one takes its place.
    minutes. *Readwise's summary*. Second: ..."
 2. **Each article:** a heading, "Article 1 of 3: *title*", then the byline and
    length, then the article itself.
-3. **After each article:** a long pause, "End of article one: *title*.", and
-   another long pause before the next heading. The pauses are lines of dashes,
-   which Reader's voice reads as silence (see `PAUSE` and `SOUND` in
-   `readwise_bundler/compose.py`).
+3. **After each article:** six seconds of silence, "End of article one:
+   *title*.", and three more seconds before the next heading.
+
+The silences are lines reading `<break time="3s" />`. Reader passes a
+paragraph's text to the voice, and its Lifelike voices (such as Deborah) treat
+that as a three-second pause. It has to be visible text: as real markup,
+Reader drops it before speaking. Other voices, such as Unreal Speech's, may
+read the line aloud instead. Dashes, ellipses, hums and blank lines were all
+tried and either made odd sounds or did nothing. See `LONG_PAUSE` and
+`SHORT_PAUSE` in `readwise_bundler/compose.py`.
 4. **The end:** "End of bundle 12. That was all three articles."
 
 Images, captions and embedded media are left out, because they read badly
