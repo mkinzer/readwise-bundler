@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from readwise_bundler.compose import Bundle, clean_article_html, looks_complete
+from readwise_bundler.compose import Bundle, clean_article_html, clean_summary, looks_complete
 from readwise_bundler.picking import to_article
 from readwise_bundler.run import original_ids
 
@@ -38,6 +38,26 @@ class Cleaning(unittest.TestCase):
             self.assertNotIn(gone, out)
         self.assertIn("newsletter business boomed", out)
         self.assertIn("Photographers memorialized", out)
+
+    def test_drops_short_promotional_blocks(self):
+        raw = ("<p>ProPublica is a nonprofit newsroom that investigates abuses of power. Sign up to "
+               "receive our biggest stories as soon as they’re published.</p><p>On a spring day.</p>")
+        out = clean_article_html(raw).html
+        self.assertNotIn("nonprofit newsroom", out)
+        self.assertIn("On a spring day.", out)
+
+
+class Summaries(unittest.TestCase):
+    def test_keeps_real_sentences_and_drops_site_boilerplate(self):
+        self.assertEqual(
+            clean_summary("Trump’s trade representative had one mission. The results? Trade wars. "
+                          "ProPublica is a nonprofit newsroom that investigates abuses of power."),
+            "Trump’s trade representative had one mission. The results? Trade wars.")
+        self.assertEqual(
+            clean_summary("Official websites use .gov A .gov website belongs to an official government "
+                          "organization in the United States. Secure .gov websites use HTTPS A lock ( ) "
+                          "or https:// means you've safely connected to the .gov website."), "")
+        self.assertEqual(clean_summary("A woo-hoo heard around the world"), "A woo-hoo heard around the world.")
 
     def test_flags_empty_saves(self):
         article = to_article(make_doc(1, minutes=10))  # ~2,380 words promised

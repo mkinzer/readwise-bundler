@@ -22,9 +22,12 @@ SYNTHETIC_HOST = "https://readwise-bundler.local"
 WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
 ORDINALS = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth"]
 
-# Chosen after listening to the break test. Each paragraph is a separate block,
-# which is where the voice pauses.
-PAUSE = "<p>— — —</p>"
+# From listening to the first break test in Reader: a line of dashes, a line
+# holding only an ellipsis, and a heading each make the voice pause; horizontal
+# rules, blank paragraphs, lone full stops, emoji and SSML <break> tags do
+# nothing. No single line pauses for long enough, so a break stacks several.
+PAUSE_LINES = 3  # pairs of dash and ellipsis lines in one long pause
+PAUSE = "<p>— — —</p><p>…</p>" * PAUSE_LINES
 CHIME = "<p>Ding. Ding. Ding.</p>"
 
 
@@ -66,8 +69,9 @@ class Bundle:
                         f"about {self.minutes} minutes in total. They are:"))
         for i, a in enumerate(self.articles):
             line = f"{ORDINALS[i]}: “{a.title}”{_byline(a, leading=', ')}. About {a.minutes} minutes."
-            if a.summary:
-                line += f" {_sentence(a.summary)}"
+            summary = clean_summary(a.summary)
+            if summary:
+                line += f" {summary}"
             parts.append(_p(line))
         parts.append(PAUSE)
         for i, a in enumerate(self.articles, 1):
@@ -76,8 +80,10 @@ class Bundle:
             parts.append(_p(f"{byline[:1].upper()}{byline[1:]}. About {a.minutes} minutes."
                             if byline else f"About {a.minutes} minutes."))
             parts.append(self.bodies.get(a.id, ""))
-            parts.append(PAUSE + CHIME + PAUSE)
+            parts.append(PAUSE + CHIME)
             parts.append(_p(f"End of article {_word(i)}: “{a.title}”."))
+            if i < n:
+                parts.append(PAUSE)  # the next article's heading adds a pause of its own
         parts.append(_p(f"End of bundle {self.number}. That was all {_word(n)} articles."))
         return "<div>\n" + "\n".join(p for p in parts if p) + "\n</div>"
 
@@ -121,6 +127,24 @@ def _spoken_date(d) -> str:
 def _sentence(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text if text[-1:] in ".!?”\"'" else text + "."
+
+
+# Readwise's summary is often the publisher's page description, which can be
+# site boilerplate. Sentences like these are dropped; if nothing is left, the
+# intro simply has no summary for that article.
+_SUMMARY_JUNK = re.compile(
+    r"\.gov website|official government organization|https://|cookies?\b|javascript|"
+    r"sign up|subscribe|newsletter|newsroom that investigates|all rights reserved|"
+    r"click here|log ?in\b|support our|become a member|donate", re.I)
+
+
+def clean_summary(summary: str) -> str:
+    text = re.sub(r"\s+", " ", summary or "").strip()
+    if not text:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"'])", text)
+    kept = [s for s in sentences if not _SUMMARY_JUNK.search(s)]
+    return _sentence(" ".join(kept)) if kept else ""
 
 
 def _byline(a: Article, *, leading: str) -> str:
@@ -227,6 +251,10 @@ _FURNITURE_START = re.compile(
     r"listen to this|share this|follow us|related:|recommended:|copyright ©|©)", re.I)
 _CALL_TO_ACTION = re.compile(
     r"\b(subscribe (to|here|now|today)|sign up (for|to|here)|join our|get our)\b", re.I)
+# Promotional lines that give themselves away wherever they appear in a short block.
+_PROMO = re.compile(
+    r"sign up to receive|sign up for our|subscribe to our|support our journalism|"
+    r"become a (paid )?(member|subscriber)", re.I)
 _MAX_FURNITURE_CHARS = 300
 
 
@@ -238,6 +266,8 @@ def _drop_boilerplate(match: "re.Match") -> str:
     if _FURNITURE_START.match(text):
         return ""
     if "newsletter" in lowered and _CALL_TO_ACTION.search(text):
+        return ""
+    if _PROMO.search(text):
         return ""
     return match.group(0)
 
