@@ -32,9 +32,9 @@ jobs:
         if: steps.config.outputs.ready != 'true'
         run: echo "::notice::Skipping. Add READWISE_TOKEN under Settings > Secrets and variables > Actions."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.config.outputs.ready == 'true'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.config.outputs.ready == 'true'
         with:
           python-version: "3.12"
