@@ -13,6 +13,7 @@ note, never reuses them, and adds the missing tags.
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 import random
 import re
@@ -20,13 +21,17 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set
 
+from . import thumbs
 from .api import ReaderClient
 from .compose import Bundle, clean_article_html, looks_complete
+from .hosting import GitHubBranchHost
+from .labels import make_labels
 from .picking import (
-    TAG_BUNDLE, TAG_BUNDLED, TAG_HEARD, Article, Picker, Rule, eligible, tag_keys, tag_names,
+    TAG_BUNDLE, TAG_BUNDLED, TAG_HEARD, Article, Picker, Rule, eligible, order, tag_keys,
+    tag_names, to_article,
 )
 
-TARGET_OPEN = 5
+TARGET_OPEN = 10
 _ORIGINAL_LINK = re.compile(r"read\.readwise\.io/(?:[a-z]+/)?read/([0-9a-z]+)", re.I)
 _BUNDLE_NUMBER = re.compile(r"^\s*Bundle\s+(\d+)\b", re.I)
 
@@ -61,6 +66,10 @@ class Run:
         made_on: Optional[date] = None,
         preview_dir: Optional[Path] = None,
         log: Callable[[str], None] = print,
+        labeler: Optional[Callable[[List[Article]], List[str]]] = None,
+        thumbnails: str = "list",
+        host=None,
+        fetch_image=None,
     ):
         self.client = client
         self.target = target
@@ -70,6 +79,10 @@ class Run:
         self.made_on = made_on or today_local()
         self.preview_dir = preview_dir
         self.log = log
+        self.labeler = labeler or (lambda articles: make_labels(articles, log=self.log))
+        self.thumbnails = thumbnails  # "list" (the default), "collage", "alternate" or "none"
+        self.host = host if host is not None else GitHubBranchHost.from_env()
+        self.fetch_image = fetch_image
         self.created: List[Bundle] = []
 
     # ------------------------------------------------------------- the run
@@ -168,7 +181,8 @@ class Run:
                 else:
                     stubs.append(article)
             if not stubs:
-                return Bundle(number=number, articles=articles, bodies=bodies, made_on=self.made_on)
+                return Bundle(number=number, articles=articles, bodies=bodies, made_on=self.made_on,
+                              labels=self.labeler(articles))
             for stub in stubs:
                 self.log(f"Skipping {stub.title!r}: Reader has little or none of its text.")
             picker.release(a.id for a in articles if a not in stubs)
@@ -181,6 +195,7 @@ class Run:
             self.preview_dir.mkdir(parents=True, exist_ok=True)
             path = self.preview_dir / f"bundle-{bundle.number}.html"
             path.write_text(_preview_page(bundle), encoding="utf-8")
+        self._attach_thumbnail(bundle)
         if self.dry_run:
             self.log(f"[dry run] Would save {bundle.title!r}: {listing}")
             self.created.append(bundle)
@@ -197,6 +212,89 @@ class Run:
         verb = "Saved" if status == 201 else "Already had"
         self.log(f"{verb} {bundle.title!r} ({body.get('url', '')}): {listing}")
         self.created.append(bundle)
+
+    # -------------------------------------------------------------- thumbnails
+
+    def _attach_thumbnail(self, bundle: Bundle) -> None:
+        """Draw the bundle's thumbnail, upload it, and give the bundle its address.
+
+        A thumbnail is a nicety: any failure is logged and the bundle goes ahead without one.
+        """
+        style = thumbs.style_for(self.thumbnails, bundle.number)
+        if not style:
+            return
+        if self.host is None and self.preview_dir is None:
+            self.log("No thumbnail: nowhere to upload it (GITHUB_REPOSITORY and GITHUB_TOKEN are not set).")
+            return
+        try:
+            data = thumbs.render(style, bundle.number, bundle.articles, bundle.short_labels(),
+                                 fetch=self.fetch_image)
+        except Exception as err:
+            self.log(f"No thumbnail for bundle {bundle.number}: drawing it failed ({err}).")
+            return
+        name = f"{bundle.url.rsplit('/', 1)[-1]}-{style}.jpg"
+        if self.preview_dir is not None:
+            self.preview_dir.mkdir(parents=True, exist_ok=True)
+            (self.preview_dir / name).write_bytes(data)
+        if self.dry_run or self.host is None:
+            return
+        try:
+            bundle.image_url = self.host.put(f"bundles/{name}", data, f"Thumbnail for bundle {bundle.number}")
+        except Exception as err:
+            self.log(f"No thumbnail for bundle {bundle.number}: uploading it failed ({err}).")
+
+    # ---------------------------------------------------------------- refresh
+
+    def refresh(self) -> int:
+        """Give waiting bundles the current title format and a thumbnail. Returns how many."""
+        prefix = "[dry run] " if self.dry_run else ""
+        waiting = [b for b in self.client.list_documents(tag=TAG_BUNDLE)
+                   if not b.get("parent_id") and b.get("location") != "archive"]
+        done = 0
+        for doc in sorted(waiting, key=lambda b: bundle_number(b.get("title"))):
+            number = bundle_number(doc.get("title"))
+            articles: List[Article] = []
+            for doc_id in original_ids(doc.get("notes")):
+                original = self.client.get_document(doc_id, with_html=False)
+                article = to_article(original) if original else None
+                if article is None:
+                    continue
+                if not article.title:
+                    article = dataclasses.replace(article, title=article.site_name or "Untitled")
+                articles.append(article)
+            if not number or not articles:
+                self.log(f"{prefix}Left {doc.get('title')!r} alone: its originals could not be found.")
+                continue
+            articles = order(articles)
+            # Labels already in the title are kept, so a refresh never renames what you have seen.
+            labels = labels_from_title(doc.get("title"), len(articles)) or self.labeler(articles)
+            bundle = Bundle(number=number, articles=articles, bodies={}, made_on=self.made_on,
+                            labels=labels, revision="refreshed")
+            style = thumbs.style_for(self.thumbnails, number)
+            current_image = doc.get("image_url") or ""
+            if bundle.title == doc.get("title") and (style is None or current_image.endswith(f"-{style}.jpg")):
+                self.log(f"{prefix}{doc.get('title')!r} is already up to date.")
+                continue
+            self._attach_thumbnail(bundle)
+            fields = {"title": bundle.title}
+            if bundle.image_url:
+                fields["image_url"] = bundle.image_url
+            if self.dry_run:
+                self.log(f"[dry run] Would rename {doc.get('title')!r} to {bundle.title!r}.")
+            else:
+                self.client.update(doc["id"], fields)
+                self.log(f"Renamed {doc.get('title')!r} to {bundle.title!r}"
+                         f"{' and gave it a thumbnail' if bundle.image_url else ''}.")
+            done += 1
+        return done
+
+
+def labels_from_title(title: Optional[str], count: int) -> Optional[List[str]]:
+    """The labels in a title of the current format ("Bundle 7 (2025) | A | B"), if it has ``count``."""
+    parts = [part.strip() for part in (title or "").split("|")]
+    if len(parts) == count + 1 and re.match(r"^Bundle \d+ \(", parts[0]) and all(parts[1:]):
+        return parts[1:]
+    return None
 
 
 def _with_tag(doc: Dict, tag: str) -> Optional[List[str]]:

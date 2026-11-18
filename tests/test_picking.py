@@ -2,7 +2,8 @@ import random
 import unittest
 
 from readwise_bundler.picking import (
-    Picker, Rule, eligible, order, parse_minutes, tidy_author, tidy_title, to_article,
+    Picker, Rule, eligible, is_web_address, order, parse_minutes, tidy_author, tidy_title,
+    title_from_url, to_article,
 )
 
 from helpers import make_doc
@@ -38,6 +39,24 @@ class Tidying(unittest.TestCase):
         self.assertEqual(tidy_author("https://www.nytimes.com/by/kim-tingley"), "Kim Tingley")
         self.assertEqual(tidy_author("https://github.com/someone/"), "")
         self.assertEqual(tidy_author("Latest News , Breaking News Today | Frontline"), "")
+
+
+class WebAddressTitles(unittest.TestCase):
+    def test_readable_words_come_from_the_address(self):
+        self.assertTrue(is_web_address("https://www.politico.com/x"))
+        self.assertFalse(is_web_address("How https:// changed the web"))
+        self.assertEqual(
+            title_from_url("https://www.politico.com/magazine/story/2017/11/02/clinton-brazile-hacks-2016-215774"),
+            "Clinton Brazile Hacks 2016")
+        self.assertEqual(title_from_url("www.foo.org/2020/why_cities_grow.html"), "Why Cities Grow")
+        self.assertEqual(title_from_url("https://site.com/p/12345678"), "")
+
+    def test_articles_titled_with_an_address_are_renamed_or_left_out(self):
+        named = make_doc(1, title="https://www.politico.com/story/2017/11/02/clinton-brazile-hacks-2016-215774")
+        hopeless = make_doc(2, title="https://example.com/p/12345678", source_url="https://example.com/p/12345678")
+        pool, skipped = eligible([named, hopeless])
+        self.assertEqual([a.title for a in pool], ["Clinton Brazile Hacks 2016"])
+        self.assertEqual(skipped["title is a web address"], 1)
 
 
 class Eligibility(unittest.TestCase):

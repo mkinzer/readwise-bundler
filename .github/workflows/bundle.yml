@@ -11,9 +11,20 @@ on:
         description: "Only show what would happen; change nothing in Reader"
         type: boolean
         default: false
+      thumbnails:
+        description: "Thumbnail style (list: the labels on a card; collage: the articles' pictures)"
+        type: choice
+        options: [list, collage, alternate, none]
+        default: list
+      refresh_existing:
+        description: "First give the bundles already waiting the new title format and a thumbnail"
+        type: boolean
+        default: false
 
+# contents: write lets the job save thumbnails to the "thumbnails" branch,
+# which Reader loads them from. It needs the repository to be public.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: readwise-bundler
@@ -23,8 +34,14 @@ jobs:
   bundle:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      READWISE_TOKEN: ${{ secrets.READWISE_TOKEN }}
+      # Optional: without it, title labels are taken from the article titles.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_TOKEN: ${{ github.token }}
+      BUNDLER_THUMBNAILS: ${{ inputs.thumbnails || vars.BUNDLER_THUMBNAILS || 'list' }}
     steps:
-      # Until the token is added, runs finish green and do nothing.
+      # Until the Readwise token is added, runs finish green and do nothing.
       - name: Check configuration
         id: config
         run: echo "ready=${{ secrets.READWISE_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
@@ -38,11 +55,18 @@ jobs:
         if: steps.config.outputs.ready == 'true'
         with:
           python-version: "3.12"
+      - name: Install
+        if: steps.config.outputs.ready == 'true'
+        run: python -m pip install --quiet -r requirements.txt
       - name: Test
         if: steps.config.outputs.ready == 'true'
+        env:
+          ANTHROPIC_API_KEY: ""
+          GITHUB_TOKEN: ""
         run: python -m unittest discover -s tests -t tests
+      - name: Refresh waiting bundles
+        if: steps.config.outputs.ready == 'true' && inputs.refresh_existing
+        run: python -m readwise_bundler refresh ${{ inputs.dry_run && '--dry-run' || '' }}
       - name: Make bundles
         if: steps.config.outputs.ready == 'true'
-        env:
-          READWISE_TOKEN: ${{ secrets.READWISE_TOKEN }}
         run: python -m readwise_bundler run ${{ inputs.dry_run && '--dry-run' || '' }}

@@ -2,7 +2,9 @@ import random
 import unittest
 from datetime import date
 
-from readwise_bundler.run import Run, original_ids
+from readwise_bundler.run import TARGET_OPEN, Run, labels_from_title, original_ids
+
+from readwise_bundler.labels import title_label
 
 from helpers import FakeClient, make_doc
 
@@ -18,15 +20,28 @@ def run(client, **kw):
     kw.setdefault("rng", random.Random(2))
     kw.setdefault("made_on", date(2026, 11, 8))
     kw.setdefault("log", lambda *_: None)
+    kw.setdefault("labeler", lambda arts: [title_label(a.title) for a in arts])
+    kw.setdefault("thumbnails", "none")
     return Run(client, **kw).go()
 
 
+class FakeHost:
+    def __init__(self, fail=False):
+        self.files, self.fail = {}, fail
+
+    def put(self, path, data, message):
+        if self.fail:
+            raise RuntimeError("GitHub is down")
+        self.files[path] = data
+        return f"https://host.example/{path}"
+
+
 class FillingTheShelf(unittest.TestCase):
-    def test_makes_five_and_tags_originals_keeping_their_tags(self):
+    def test_fills_the_shelf_and_tags_originals_keeping_their_tags(self):
         client = FakeClient(library())
         made = run(client)
-        self.assertEqual(len(made), 5)
-        self.assertEqual([b.number for b in made], [1, 2, 3, 4, 5])
+        self.assertEqual(TARGET_OPEN, 10)
+        self.assertEqual([b.number for b in made], list(range(1, TARGET_OPEN + 1)))
         used = [a.id for b in made for a in b.articles]
         self.assertEqual(len(used), len(set(used)))
         for doc_id in used:
@@ -41,12 +56,12 @@ class FillingTheShelf(unittest.TestCase):
         first = next(d for d in client.docs.values() if d["title"].startswith("Bundle 1 "))
         client.docs[first["id"]]["location"] = "archive"
         made = run(client)
-        self.assertEqual([b.number for b in made], [6])
+        self.assertEqual([b.number for b in made], [TARGET_OPEN + 1])
 
     def test_dry_run_changes_nothing(self):
         client = FakeClient(library())
         made = run(client, dry_run=True)
-        self.assertEqual(len(made), 5)
+        self.assertEqual(len(made), TARGET_OPEN)
         self.assertEqual(client.saved, [])
         self.assertEqual(client.updates, [])
 
@@ -91,6 +106,71 @@ class FinishedBundles(unittest.TestCase):
         run(client, target=1)
         heard_updates = [u for u in client.updates[before:] if "bundle-heard" in u.get("tags", [])]
         self.assertEqual(heard_updates, [], "a settled bundle was processed again")
+
+
+class LabelsAndThumbnails(unittest.TestCase):
+    topics = staticmethod(lambda arts: [f"Topic {i}" for i in range(len(arts))])
+
+    def test_new_bundles_get_labels_and_alternating_thumbnails(self):
+        client, host = FakeClient(library()), FakeHost()
+        made = run(client, target=2, labeler=self.topics, thumbnails="alternate", host=host,
+                   fetch_image=lambda url: None)
+        self.assertRegex(made[0].title, r"^Bundle 1 \(\d{4}(–\d{4})?\) \| Topic 0 \| Topic 1")
+        self.assertEqual(sorted(p.rsplit("-", 1)[-1] for p in host.files), ["collage.jpg", "list.jpg"])
+        self.assertTrue(all(p["image_url"].startswith("https://host.example/bundles/") for p in client.saved))
+
+    def test_a_failed_upload_does_not_stop_the_bundle(self):
+        client, log = FakeClient(library()), []
+        made = run(client, target=1, thumbnails="list", host=FakeHost(fail=True), log=log.append)
+        self.assertEqual(len(made), 1)
+        self.assertNotIn("image_url", client.saved[0])
+        self.assertTrue(any("uploading it failed" in line for line in log))
+
+    def test_refresh_renames_only_waiting_bundles(self):
+        client = FakeClient(library())
+        run(client, target=2)
+        first, second = sorted((d for d in client.docs.values() if d["id"].startswith("bundle")),
+                               key=lambda d: d["title"])
+        first["location"] = "archive"
+        archived_title = first["title"]
+        second["title"] = "Bundle 2 · 3 articles · 50 min"  # made before the new title format
+        host = FakeHost()
+        done = Run(client, labeler=lambda arts: [f"Fresh {i}" for i in range(len(arts))],
+                   thumbnails="list", host=host, log=lambda *_: None,
+                   made_on=date(2026, 11, 18)).refresh()
+        self.assertEqual(done, 1)
+        self.assertIn("| Fresh 0 | Fresh 1", client.docs[second["id"]]["title"])
+        self.assertTrue(client.docs[second["id"]]["image_url"].startswith("https://host.example/"))
+        self.assertEqual(client.docs[first["id"]]["title"], archived_title)
+
+    def test_refresh_keeps_labels_and_skips_what_is_current(self):
+        client = FakeClient(library())
+        run(client, target=2, labeler=self.topics, thumbnails="list", host=FakeHost(),
+            fetch_image=lambda url: None)
+        asked = []
+        labeler = lambda arts: asked.append(arts) or ["New"] * len(arts)
+        host = FakeHost()
+        quiet = dict(labeler=labeler, host=host, log=lambda *_: None, fetch_image=lambda url: None)
+        self.assertEqual(Run(client, thumbnails="list", **quiet).refresh(), 0)
+        self.assertEqual(host.files, {})
+        self.assertEqual(Run(client, thumbnails="collage", **quiet).refresh(), 2)
+        self.assertEqual(asked, [], "existing labels were rewritten")
+        for doc in (d for d in client.docs.values() if d["id"].startswith("bundle")):
+            self.assertIn("| Topic 0 | Topic 1", doc["title"])
+            self.assertTrue(doc["image_url"].endswith("-collage.jpg"))
+
+    def test_labels_from_title(self):
+        self.assertEqual(labels_from_title("Bundle 7 (2025) | Bihar Caste | Supreme Court", 2),
+                         ["Bihar Caste", "Supreme Court"])
+        self.assertIsNone(labels_from_title("Bundle 7 (2025) | Bihar Caste | Supreme Court", 3))
+        self.assertIsNone(labels_from_title("Bundle 6 · 4 articles · 56 min", 4))
+
+    def test_refresh_dry_run_changes_nothing(self):
+        client = FakeClient(library())
+        run(client, target=1)
+        before = len(client.updates)
+        Run(client, labeler=self.topics, thumbnails="none", dry_run=True, log=lambda *_: None).refresh()
+        self.assertEqual(len(client.updates), before)
 
 
 if __name__ == "__main__":

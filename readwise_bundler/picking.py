@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import random
 import re
+import urllib.parse
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -55,6 +56,12 @@ class Article:
     category: str
     reader_url: str
     tag_names: Tuple[str, ...] = field(default_factory=tuple)
+    image_url: Optional[str] = None
+
+    @property
+    def year(self) -> int:
+        """Publication year, or the year it was saved when Readwise has no publication date."""
+        return (self.published or self.saved_at).year
 
 
 @dataclass
@@ -142,6 +149,39 @@ def tidy_title(title: str, site_name: str = "") -> str:
     return title
 
 
+_WEB_ADDRESS = re.compile(r"^(https?://|www\.)\S+$", re.I)
+_SLUG_FILLER = {
+    "story", "stories", "article", "articles", "magazine", "news", "post", "posts", "blog",
+    "index", "html", "htm", "php", "amp", "www", "com", "org", "en", "us", "p",
+}
+
+
+def is_web_address(title: str) -> bool:
+    """Readwise falls back to the page's address when it finds no title."""
+    return bool(_WEB_ADDRESS.match((title or "").strip()))
+
+
+def title_from_url(url: str) -> str:
+    """Readable words from the end of an address, or "" when there are none.
+
+    ".../2017/11/02/clinton-brazile-hacks-2016-215774" -> "Clinton Brazile Hacks 2016"
+    """
+    if not url:
+        return ""
+    path = urllib.parse.urlparse(url if "://" in url else "https://" + url).path
+    segments = [s for s in path.split("/") if re.search(r"[a-z]", s, re.I)]
+    if not segments:
+        return ""
+    slug = max(segments, key=lambda s: (s.count("-") + s.count("_"), len(s)))
+    slug = re.sub(r"\.(html?|php|aspx?)$", "", slug, flags=re.I)
+    words = [w for w in re.split(r"[-_+.]+", slug) if w]
+    words = [w for w in words
+             if not re.fullmatch(r"\d{5,}|[0-9a-f]{8,}", w, re.I) and w.lower() not in _SLUG_FILLER]
+    if len(words) < 2:
+        return ""
+    return " ".join(w.capitalize() if w.islower() else w for w in words)
+
+
 def tidy_author(author: str) -> str:
     """"Name, Name, Name" read as a list; drop prefixes, links and junk."""
     author = re.sub(r"\s+", " ", author or "").strip()
@@ -166,9 +206,15 @@ def to_article(doc: Dict) -> Optional[Article]:
     if minutes is None or saved is None:
         return None
     site_name = (doc.get("site_name") or "").strip()
+    raw_title = doc.get("title") or ""
+    if is_web_address(raw_title):
+        # "" when the address has no readable words; eligible() then leaves it out
+        title = title_from_url(raw_title) or title_from_url(doc.get("source_url") or "")
+    else:
+        title = tidy_title(raw_title, site_name)
     return Article(
         id=doc["id"],
-        title=tidy_title(doc.get("title") or "", site_name),
+        title=title,
         author=tidy_author(doc.get("author") or ""),
         site_name=site_name,
         minutes=minutes,
@@ -179,6 +225,7 @@ def to_article(doc: Dict) -> Optional[Article]:
         category=doc.get("category") or "",
         reader_url=doc.get("url") or f"https://read.readwise.io/read/{doc['id']}",
         tag_names=tuple(tag_names(doc)),
+        image_url=(doc.get("image_url") or "").strip() or None,
     )
 
 
@@ -221,6 +268,9 @@ def eligible(docs: Iterable[Dict], *, exclude_ids: Iterable[str] = ()) -> Tuple[
         article = to_article(doc)
         if article is None:
             skip("no length or date")
+            continue
+        if not article.title:
+            skip("title is a web address")
             continue
         if article.minutes >= STANDALONE_MINUTES:
             skip(f"{STANDALONE_MINUTES}+ minutes")
