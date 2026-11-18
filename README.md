@@ -17,13 +17,10 @@ to three-word label for each article, under 15 words in all. Claude writes the
 labels from the article titles alone. Without an Anthropic API key, or if that
 request fails, labels are taken from the first words of the titles instead.
 
-**Thumbnail**, in one of two styles while they are being compared:
-
-* **collage:** the articles' own pictures in a grid. An article without a
-  usable picture gets a coloured tile with its label and publication.
-* **list:** a card with the bundle number and the articles' labels.
-
-By default odd-numbered bundles get a collage and even-numbered ones a list.
+**Thumbnail:** a card with the bundle number and the articles' labels
+(the `list` style). A `collage` of the articles' own pictures is also
+available, and `alternate` mixes the two by bundle number; see the options
+below.
 
 ## What a bundle sounds like
 
@@ -106,11 +103,13 @@ originals, which is how the tool finds them again. There is no database.
    nightly run at about 3 am Eastern. GitHub often starts scheduled jobs hours
    late.
 
-**Run workflow options:** *Thumbnail style* (alternate, collage, list or none)
+**Run workflow options:** *Thumbnail style* (list, collage, alternate or none)
 and *Refresh waiting bundles*, which first gives the bundles already waiting
 the current title format and a thumbnail. To change the nightly style, add a
 repository variable `BUNDLER_THUMBNAILS` (Settings > Secrets and variables >
-Actions > Variables) set to `collage`, `list`, `alternate` or `none`.
+Actions > Variables) set to `list` (the default), `collage`, `alternate` or
+`none`. A refresh keeps the labels a bundle already has, redraws only
+thumbnails whose style changed, and leaves up-to-date bundles alone.
 
 To change the time, edit the `cron` line in `.github/workflows/bundle.yml`
 (it is in UTC). To pause it, disable the workflow on the Actions page.

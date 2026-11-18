@@ -2,7 +2,7 @@ import random
 import unittest
 from datetime import date
 
-from readwise_bundler.run import TARGET_OPEN, Run, original_ids
+from readwise_bundler.run import TARGET_OPEN, Run, labels_from_title, original_ids
 
 from readwise_bundler.labels import title_label
 
@@ -133,6 +133,7 @@ class LabelsAndThumbnails(unittest.TestCase):
                                key=lambda d: d["title"])
         first["location"] = "archive"
         archived_title = first["title"]
+        second["title"] = "Bundle 2 · 3 articles · 50 min"  # made before the new title format
         host = FakeHost()
         done = Run(client, labeler=lambda arts: [f"Fresh {i}" for i in range(len(arts))],
                    thumbnails="list", host=host, log=lambda *_: None,
@@ -141,6 +142,28 @@ class LabelsAndThumbnails(unittest.TestCase):
         self.assertIn("| Fresh 0 | Fresh 1", client.docs[second["id"]]["title"])
         self.assertTrue(client.docs[second["id"]]["image_url"].startswith("https://host.example/"))
         self.assertEqual(client.docs[first["id"]]["title"], archived_title)
+
+    def test_refresh_keeps_labels_and_skips_what_is_current(self):
+        client = FakeClient(library())
+        run(client, target=2, labeler=self.topics, thumbnails="list", host=FakeHost(),
+            fetch_image=lambda url: None)
+        asked = []
+        labeler = lambda arts: asked.append(arts) or ["New"] * len(arts)
+        host = FakeHost()
+        quiet = dict(labeler=labeler, host=host, log=lambda *_: None, fetch_image=lambda url: None)
+        self.assertEqual(Run(client, thumbnails="list", **quiet).refresh(), 0)
+        self.assertEqual(host.files, {})
+        self.assertEqual(Run(client, thumbnails="collage", **quiet).refresh(), 2)
+        self.assertEqual(asked, [], "existing labels were rewritten")
+        for doc in (d for d in client.docs.values() if d["id"].startswith("bundle")):
+            self.assertIn("| Topic 0 | Topic 1", doc["title"])
+            self.assertTrue(doc["image_url"].endswith("-collage.jpg"))
+
+    def test_labels_from_title(self):
+        self.assertEqual(labels_from_title("Bundle 7 (2025) | Bihar Caste | Supreme Court", 2),
+                         ["Bihar Caste", "Supreme Court"])
+        self.assertIsNone(labels_from_title("Bundle 7 (2025) | Bihar Caste | Supreme Court", 3))
+        self.assertIsNone(labels_from_title("Bundle 6 · 4 articles · 56 min", 4))
 
     def test_refresh_dry_run_changes_nothing(self):
         client = FakeClient(library())

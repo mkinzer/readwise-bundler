@@ -26,9 +26,9 @@ def main(argv=None) -> int:
         p.add_argument("--dry-run", action="store_true",
                        help="show what would happen without changing anything in Reader")
         p.add_argument("--thumbnails", choices=THUMBNAIL_CHOICES,
-                       default=os.environ.get("BUNDLER_THUMBNAILS") or "alternate",
+                       default=os.environ.get("BUNDLER_THUMBNAILS") or "list",
                        help="thumbnail style; 'alternate' gives odd bundles a collage, even ones a list "
-                            "(default: $BUNDLER_THUMBNAILS or alternate)")
+                            "(default: $BUNDLER_THUMBNAILS or list)")
         p.add_argument("--preview", type=Path, metavar="DIR",
                        help="also write each bundle (and its thumbnail) to files in DIR")
 

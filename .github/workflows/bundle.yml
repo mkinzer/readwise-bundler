@@ -12,10 +12,10 @@ on:
         type: boolean
         default: false
       thumbnails:
-        description: "Thumbnail style (alternate: odd bundles get a collage, even ones a list of titles)"
+        description: "Thumbnail style (list: the labels on a card; collage: the articles' pictures)"
         type: choice
-        options: [alternate, collage, list, none]
-        default: alternate
+        options: [list, collage, alternate, none]
+        default: list
       refresh_existing:
         description: "First give the bundles already waiting the new title format and a thumbnail"
         type: boolean
@@ -39,7 +39,7 @@ jobs:
       # Optional: without it, title labels are taken from the article titles.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GITHUB_TOKEN: ${{ github.token }}
-      BUNDLER_THUMBNAILS: ${{ inputs.thumbnails || vars.BUNDLER_THUMBNAILS || 'alternate' }}
+      BUNDLER_THUMBNAILS: ${{ inputs.thumbnails || vars.BUNDLER_THUMBNAILS || 'list' }}
     steps:
       # Until the Readwise token is added, runs finish green and do nothing.
       - name: Check configuration

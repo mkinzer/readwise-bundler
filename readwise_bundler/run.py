@@ -67,7 +67,7 @@ class Run:
         preview_dir: Optional[Path] = None,
         log: Callable[[str], None] = print,
         labeler: Optional[Callable[[List[Article]], List[str]]] = None,
-        thumbnails: str = "alternate",
+        thumbnails: str = "list",
         host=None,
         fetch_image=None,
     ):
@@ -80,7 +80,7 @@ class Run:
         self.preview_dir = preview_dir
         self.log = log
         self.labeler = labeler or (lambda articles: make_labels(articles, log=self.log))
-        self.thumbnails = thumbnails  # "collage", "list", "alternate" or "none"
+        self.thumbnails = thumbnails  # "list" (the default), "collage", "alternate" or "none"
         self.host = host if host is not None else GitHubBranchHost.from_env()
         self.fetch_image = fetch_image
         self.created: List[Bundle] = []
@@ -266,8 +266,15 @@ class Run:
                 self.log(f"{prefix}Left {doc.get('title')!r} alone: its originals could not be found.")
                 continue
             articles = order(articles)
+            # Labels already in the title are kept, so a refresh never renames what you have seen.
+            labels = labels_from_title(doc.get("title"), len(articles)) or self.labeler(articles)
             bundle = Bundle(number=number, articles=articles, bodies={}, made_on=self.made_on,
-                            labels=self.labeler(articles), revision="refreshed")
+                            labels=labels, revision="refreshed")
+            style = thumbs.style_for(self.thumbnails, number)
+            current_image = doc.get("image_url") or ""
+            if bundle.title == doc.get("title") and (style is None or current_image.endswith(f"-{style}.jpg")):
+                self.log(f"{prefix}{doc.get('title')!r} is already up to date.")
+                continue
             self._attach_thumbnail(bundle)
             fields = {"title": bundle.title}
             if bundle.image_url:
@@ -280,6 +287,14 @@ class Run:
                          f"{' and gave it a thumbnail' if bundle.image_url else ''}.")
             done += 1
         return done
+
+
+def labels_from_title(title: Optional[str], count: int) -> Optional[List[str]]:
+    """The labels in a title of the current format ("Bundle 7 (2025) | A | B"), if it has ``count``."""
+    parts = [part.strip() for part in (title or "").split("|")]
+    if len(parts) == count + 1 and re.match(r"^Bundle \d+ \(", parts[0]) and all(parts[1:]):
+        return parts[1:]
+    return None
 
 
 def _with_tag(doc: Dict, tag: str) -> Optional[List[str]]:
