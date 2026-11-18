@@ -14,8 +14,8 @@ run puts a new one in its place.
 **Title:** `Bundle 6 (2019) | FP Books | Tunisia | Equality Philosopher | Mexican Cartels`:
 the bundle number, the year or years the articles were published, and a one-
 to three-word label for each article, under 15 words in all. Claude writes the
-labels from each article's title and summary. Without an Anthropic API key, or
-if that request fails, labels are taken from the titles instead.
+labels from the article titles alone. Without an Anthropic API key, or if that
+request fails, labels are taken from the first words of the titles instead.
 
 **Thumbnail**, in one of two styles while they are being compared:
 
@@ -92,7 +92,7 @@ originals, which is how the tool finds them again. There is no database.
    finishes green and does nothing.
 2. **Anthropic API key** (for the title labels). Add it the same way, named
    `ANTHROPIC_API_KEY`; keys are made at console.anthropic.com under Settings >
-   API Keys. Labels cost about 1-2 cents a bundle with Claude Opus 5.5.
+   API Keys. Labels cost well under a cent a bundle with Claude Opus 5.5.
 3. **Make the repository public.** Reader takes a thumbnail only as a web
    address, so the job saves thumbnails to this repository's `thumbnails`
    branch and gives Reader their raw.githubusercontent.com addresses, which
