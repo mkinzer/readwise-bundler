@@ -14,6 +14,7 @@ from datetime import date, datetime
 from html.parser import HTMLParser
 from typing import Dict, List, Optional, Sequence
 
+from .labels import title_label
 from .picking import Article, total_minutes
 
 SYNTHETIC_HOST = "https://readwise-bundler.local"
@@ -42,15 +43,29 @@ class Bundle:
     bodies: Dict[str, str]          # article id -> cleaned HTML
     made_on: date
     revision: str = ""              # set when a bundle is remade, so Reader sees a new URL
+    labels: Optional[List[str]] = None   # short topic labels, one per article, in order
+    image_url: Optional[str] = None      # the thumbnail, once it has been uploaded
 
     @property
     def minutes(self) -> int:
         return total_minutes(self.articles)
 
     @property
+    def years(self) -> str:
+        """"2019", or "2017–2019" when the articles were published in different years."""
+        ys = sorted({a.year for a in self.articles})
+        return str(ys[0]) if len(ys) == 1 else f"{ys[0]}–{ys[-1]}"
+
+    def short_labels(self) -> List[str]:
+        labels = list(self.labels or [])
+        if len(labels) != len(self.articles):
+            labels = [title_label(a.title) for a in self.articles]
+        return fit_labels(labels, MAX_TITLE_WORDS - 3)  # "Bundle 12 (2019)" is three words
+
+    @property
     def title(self) -> str:
-        n = len(self.articles)
-        return f"Bundle {self.number} · {n} articles · {self.minutes} min"
+        """"Bundle 6 (2019) | FP Books | Tunisia | Equality Philosopher | Mexican Cartels"."""
+        return f"Bundle {self.number} ({self.years}) | " + " | ".join(self.short_labels())
 
     @property
     def url(self) -> str:
@@ -106,7 +121,23 @@ class Bundle:
             "tags": ["listen-bundle"],
             "notes": self.notes(),
             "saved_using": "readwise-bundler",
+            **({"image_url": self.image_url} if self.image_url else {}),
         }
+
+
+MAX_TITLE_WORDS = 14  # "less than 15 words" in all
+
+
+def fit_labels(labels: List[str], budget: int) -> List[str]:
+    """Shorten the wordiest labels, a word at a time, until all of them fit the budget."""
+    words = [label.split() for label in labels]
+    while sum(len(w) for w in words) > budget:
+        # on a tie, trim the later label, so cuts spread out instead of piling onto one
+        longest = max(reversed(range(len(words))), key=lambda i: len(words[i]))
+        if len(words[longest]) <= 1:
+            break
+        words[longest] = words[longest][:-1]
+    return [" ".join(w) for w in words]
 
 
 # ---------------------------------------------------------------- wording

@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from readwise_bundler.compose import Bundle, clean_article_html, clean_summary, looks_complete
+from readwise_bundler.compose import Bundle, clean_article_html, clean_summary, fit_labels, looks_complete
 from readwise_bundler.picking import to_article
 from readwise_bundler.run import original_ids
 
@@ -76,7 +76,7 @@ class Assembly(unittest.TestCase):
         self.bundle = Bundle(number=12, articles=self.articles, bodies=bodies, made_on=date(2026, 11, 8))
 
     def test_title_and_url(self):
-        self.assertEqual(self.bundle.title, "Bundle 12 · 3 articles · 50 min")
+        self.assertEqual(self.bundle.title, "Bundle 12 (2024–2025) | Article 1 | Article 2 | Article 3")
         self.assertTrue(self.bundle.url.startswith("https://readwise-bundler.local/bundle/12-"))
         same = Bundle(number=12, articles=list(reversed(self.articles)), bodies={}, made_on=date.today())
         self.assertEqual(same.url, self.bundle.url)
@@ -128,3 +128,25 @@ class Assembly(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Titles(unittest.TestCase):
+    def articles(self, *years):
+        return [to_article(make_doc(i, published=f"{y}-05-01")) for i, y in enumerate(years)]
+
+    def test_labels_and_a_single_year(self):
+        b = Bundle(number=6, articles=self.articles(2019, 2019, 2019, 2019), bodies={},
+                   made_on=date(2026, 11, 18),
+                   labels=["FP Books", "Tunisia", "Equality Philosopher", "Mexican Cartels"])
+        self.assertEqual(b.title, "Bundle 6 (2019) | FP Books | Tunisia | Equality Philosopher | Mexican Cartels")
+
+    def test_title_stays_under_fifteen_words(self):
+        b = Bundle(number=7, articles=self.articles(2017, 2018, 2019, 2019), bodies={},
+                   made_on=date(2026, 11, 18),
+                   labels=["One Two Three", "Four Five Six", "Seven Eight Nine", "Ten Eleven Twelve"])
+        words = [w for w in b.title.split() if w != "|"]
+        self.assertLess(len(words), 15)
+        self.assertTrue(b.title.startswith("Bundle 7 (2017–2019) | "))
+
+    def test_fit_labels_trims_the_wordiest_first(self):
+        self.assertEqual(fit_labels(["A B C", "D", "E F"], 4), ["A B", "D", "E"])

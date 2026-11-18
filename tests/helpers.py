@@ -74,7 +74,7 @@ class FakeClient:
             "title": payload["title"], "location": payload["location"], "category": "article",
             "tags": {t: {"name": t} for t in payload["tags"]}, "notes": payload["notes"],
             "parent_id": None, "word_count": 5000, "reading_time": "50 mins",
-            "saved_at": BASE.isoformat(),
+            "saved_at": BASE.isoformat(), "image_url": payload.get("image_url"),
         }
         return 201, {"id": doc_id, "url": f"https://read.readwise.io/read/{doc_id}"}
 
@@ -85,6 +85,9 @@ class FakeClient:
             doc["tags"] = {t.lower(): {"name": t} for t in fields["tags"]}
         if "location" in fields:
             doc["location"] = fields["location"]
+        for key in ("title", "image_url"):
+            if key in fields:
+                doc[key] = fields[key]
 
     def update(self, doc_id, fields):
         self._apply(doc_id, fields)
